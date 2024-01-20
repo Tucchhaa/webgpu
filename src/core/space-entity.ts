@@ -97,12 +97,12 @@ export class SpaceEntity {
 
     public get transformationMatrix() { return this.transform.transformationMatrix; }
 
-    public translate(vector: Vec3): void {
-        this.transform.translate(vector);
+    public translate(vector: Vec3, transform?: Transform): void {
+        this.transform.translate(vector, transform);
     }
 
-    public rotate(rotation: Quat): void {
-        this.transform.rotate(rotation);
+    public rotate(rotation: Quat, transform?: Transform): void {
+        this.transform.rotate(rotation, transform);
     }
 
     public scaleBy(scale: Vec3): void {

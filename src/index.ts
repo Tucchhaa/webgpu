@@ -1,4 +1,4 @@
-import { CameraComponent, MeshComponent } from "./core/components";
+import { CameraComponent, MeshComponent, WorldTransform } from "./core/components";
 import { Input } from "./core/input/input";
 import { quat, vec3 } from "wgpu-matrix";
 import { Material } from "./core/material";
@@ -8,11 +8,8 @@ import { Scene } from "./core/scene/scene";
 
 /*
 TODO:
-1. translation of objects is relative to its scale
-2. lights
-3. camera person-like movement
-4. translate/rotate/scale relative to transform
-5. scenes
+1. lights
+2. camera person-like movement
 */
 
 // xyz, uv, normal
@@ -117,7 +114,8 @@ async function main() {
 	const cube1 = new SpaceEntity({
 		transform: {
 			scale: vec3.fromValues(1, 1, 1),
-			position: vec3.fromValues(20, 10, -40)
+			position: vec3.fromValues(20, 10, -40),
+			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI)
 		},
 		components: [mesh1]
 	});
@@ -125,7 +123,8 @@ async function main() {
 	const cube2 = new SpaceEntity({
 		transform: {
 			scale: vec3.fromValues(1, 2, 1),
-			position: vec3.fromValues(0, 0, -40)
+			position: vec3.fromValues(0, 0, -40),
+			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI * 45/180)
 		},
 		components: [mesh2]
 	});
@@ -142,10 +141,10 @@ async function main() {
 	const frame = async () => {		
 		await renderer.render(scene);
 
-		cube2.rotate(quat.fromEuler(0.01, 0, 0 , "xyz"));
+		cube2.rotate(quat.fromEuler(0.01, 0, 0 , "xyz"), WorldTransform);
 
 		// cube.scaleBy(vec3.fromValues(1.0003, 1.0003, 1.0003))
-		// cube.translate(vec3.fromValues(0, 0, -0.1));
+		// cube2.translate(vec3.fromValues(0, 0, 0.1), cube1.transform);
 
 		if(Input.isShiftPressed) {
 			const rotation = quat.fromEuler(Input.axisVertical * angleSpeed, Input.axisHorizontal * angleSpeed, 0, 'xyz');

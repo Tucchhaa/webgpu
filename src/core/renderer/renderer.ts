@@ -1,6 +1,6 @@
 import { WebGPURendererVertexManager as RendererVertexManager } from "./vertex-manager";
 import { BindGroupsManager } from "./bindgroups-manager";
-import { CAMERA_BINDGROUP_INDEX, DEPTH_TEXTURE_FORMAT, OBJECT_BINDGROUP_INDEX as OBJECT_BINDGROUP_INDEX } from "./const";
+import { CAMERA_BINDGROUP_INDEX as SCENE_BINDGROUP_INDEX, DEPTH_TEXTURE_FORMAT, OBJECT_BINDGROUP_INDEX as OBJECT_BINDGROUP_INDEX } from "./const";
 import { loadShader } from "../../helpers/load";
 import { CameraComponent, MeshComponent } from "../components";
 import { Scene } from "../scene/scene";
@@ -117,10 +117,6 @@ export class Renderer {
     // ===
 
     async render(scene: Scene): Promise<void> {
-        const { mainCamera: camera, meshes } = scene;
-
-        const cameraBindGroup = this.bindGroupsManager.getSceneBindGroup(camera, this.renderPipeline);
-
         const encoder = this.device.createCommandEncoder();
 
         const renderPass = encoder.beginRenderPass({
@@ -139,7 +135,11 @@ export class Renderer {
         });
 
         renderPass.setPipeline(this.renderPipeline);
-        renderPass.setBindGroup(CAMERA_BINDGROUP_INDEX, cameraBindGroup);
+
+        const { mainCamera: camera, meshes } = scene;
+        const sceneBindGroup = this.bindGroupsManager.getSceneBindGroup(camera, this.renderPipeline);
+
+        renderPass.setBindGroup(SCENE_BINDGROUP_INDEX, sceneBindGroup);
 
         let totalInstanceCount = 0;
 

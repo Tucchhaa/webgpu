@@ -18,7 +18,7 @@ export class Transform extends EntityComponent {
 
     protected _transformationMatrix: Mat4;
 
-    constructor(config: TransformConfig) {
+    constructor(config: TransformConfig = {}) {
         super();
 
         this._position = config.position ?? vec3.zero();
@@ -70,19 +70,30 @@ export class Transform extends EntityComponent {
     // ===
     // Transformation
     // ===
-    public translate(vector: Vec3): void {
+    public translate(vector: Vec3, transform?: Transform): void {
+        const { rotation } = transform ?? this;
+
         (vector as Float32Array)[2] = -(vector as Float32Array)[2]!;
 
-        const rotatedVector = vec3.transformQuat(vector, quat.inverse(this.rotation));
+        const rotatedVector = vec3.transformQuat(vector, quat.inverse(rotation));
 
-        this.position = vec3.add(this._position, rotatedVector);
+        this.position = vec3.add(this.position, rotatedVector);
     }
 
-    public rotate(rotation: Quat): void {
-        this.rotation = quat.mul(rotation, this.rotation);
+    public rotate(rotation: Quat, transform?: Transform): void {
+        if(transform && transform !== this) {
+            const relativeRotation = quat.mul(quat.mul(transform.rotation, rotation), quat.conjugate(transform.rotation));
+
+            this.rotation = quat.mul(relativeRotation, this.rotation);
+
+        } else {
+            this.rotation = quat.mul(this.rotation, rotation);
+        }
     }
 
     public scaleBy(scalation: Vec3): void {
         this.scale = vec3.multiply(this._scale, scalation);
     }
 }
+
+export const WorldTransform = new Transform();
