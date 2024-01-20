@@ -1,5 +1,4 @@
-import { Vec3, Quat } from "wgpu-matrix";
-import { EntityComponentType, SpaceEntity, SpaceEntityConfig } from "../space-entity";
+import { EntityComponentType, SpaceEntity } from "../space-entity";
 
 export abstract class EntityComponent {
     private static _lastComponentID = -1;
@@ -48,7 +47,7 @@ export abstract class EntityComponent {
 
     // ===
 
-    requireComponent(componentType: EntityComponentType): EntityComponent {
+    requireComponent<T extends EntityComponent>(componentType: EntityComponentType<T>): T {
         return this.entity.requireComponent(componentType);
     }
 }

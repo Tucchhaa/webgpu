@@ -1,12 +1,14 @@
-import { Mat4, Quat, Vec3, mat4, quat, vec3, vec4 } from "wgpu-matrix";
+import { Quat, Vec3 } from "wgpu-matrix";
 import { EntityComponent } from "./components/entity-component";
 import { Transform, TransformConfig } from "./components/transform";
 
 export interface SpaceEntityConfig {
     transform?: TransformConfig;
+
+    components?: EntityComponent[];
 }
 
-export type EntityComponentType = new (...args: any[]) => EntityComponent;
+export type EntityComponentType<T extends EntityComponent> = new (...args: any[]) => T;
 
 export class SpaceEntity {
     private static _lastEntityID = -1;
@@ -29,7 +31,12 @@ export class SpaceEntity {
 
         this.transform = new Transform(config.transform ?? {});
         
-        this.components[this.transform.ID] = this.transform;
+        // === Components
+        this.addComponent(this.transform);
+
+        for(const component of config.components ?? []) {
+            this.addComponent(component);
+        }
     }
 
     // ===
@@ -47,19 +54,26 @@ export class SpaceEntity {
         component.removeAttachment();
     }
 
-    public getComponent(componentType: EntityComponentType): EntityComponent | null {
+    public getComponents<T extends EntityComponent>(componentType: EntityComponentType<T>): T[] {
+        const result: T[] = [];
+
         for(const componentId in this.components) {
             const component = this.components[componentId];
 
-            if(component instanceof componentType) {
-                return component;
-            }
+            if(component instanceof componentType)
+                result.push(component);
         }
 
-        return null;
+        return result;
     }
 
-    public requireComponent(componentType: EntityComponentType): EntityComponent {
+    public getComponent<T extends EntityComponent>(componentType: EntityComponentType<T>): T | null {
+        const components = this.getComponents(componentType);
+
+        return components[0] || null;
+    }
+
+    public requireComponent<T extends EntityComponent>(componentType: EntityComponentType<T>): T {
         const component = this.getComponent(componentType);
 
         if(component === null) {

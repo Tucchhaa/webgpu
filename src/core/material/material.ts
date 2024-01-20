@@ -1,18 +1,3 @@
-import { STRIDE_SIZE } from "../renderer/const";
-import { SpaceEntity, SpaceEntityConfig } from "./space-entity";
-
-export class Mesh {
-    public vertices: Float32Array;
-
-    public readonly polygonsCount: number;
-
-    constructor(vertices: Float32Array) {
-        this.vertices = vertices;
-
-        this.polygonsCount = Math.ceil(vertices.length / STRIDE_SIZE);
-    }
-}
-
 export interface MaterialConfig {
     textureBitmap: ImageBitmap;
 
@@ -48,25 +33,5 @@ export class Material {
 
         this.samplerMinFilter = config.samplerMinFilter;
         this.samplerMagFilter = config.samplerMagFilter;
-    }
-}
-
-export interface Object3DConfig extends SpaceEntityConfig {
-    mesh: Mesh;
-
-    material: Material;
-}
-
-export class Object3D extends SpaceEntity {
-    public readonly mesh: Mesh;
-
-    public readonly material: Material;
-
-    constructor(config: Object3DConfig) {
-        super(config);
-
-        this.mesh = config.mesh;
-
-        this.material = config.material;
     }
 }

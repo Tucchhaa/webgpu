@@ -1,15 +1,18 @@
-import { Input } from "./core/input";
-import { Object3D, Mesh, Material } from "./entity";
-import { CameraComponent } from "./entity/components/camera-component";
-import { SpaceEntity } from "./entity/space-entity";
-import { Renderer } from "./renderer";
+import { CameraComponent, MeshComponent } from "./core/components";
+import { Input } from "./core/input/input";
 import { quat, vec3 } from "wgpu-matrix";
+import { Material } from "./core/material";
+import { Renderer } from "./core/renderer";
+import { SpaceEntity } from "./core/space-entity";
+import { Scene } from "./core/scene/scene";
 
 /*
 TODO:
 1. translation of objects is relative to its scale
 2. lights
 3. camera person-like movement
+4. translate/rotate/scale relative to transform
+5. scenes
 */
 
 // xyz, uv, normal
@@ -81,6 +84,8 @@ async function main() {
 
 	const renderer = await Renderer.create(canvas, device);
 
+	const scene = new Scene();
+
 	const camera = new SpaceEntity({
 		transform: {
 			position: vec3.fromValues(0, 0, 0),
@@ -92,44 +97,52 @@ async function main() {
 	});
 
 	camera.addComponent(cameraComponent);
-
-	let rot = quat.create(0,0,0,1);
 	
-	rot = quat.rotateY(rot, -0.78)
-	
-	const res = await fetch('src/chess-texture.jpeg');
+	const res = await fetch('src/resources/chess-texture.jpeg');
 	const img = await res.blob();
 	const bitmap = await createImageBitmap(img);
 
-	const cube1 = new Object3D({
-		mesh: new Mesh(cubeVertices),
-		material: new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' }),
+	const vertices1 = new Float32Array(cubeVertices.length);
+	const vertices2 = new Float32Array(cubeVertices.length);
+
+	vertices1.set(cubeVertices);
+	vertices2.set(cubeVertices);
+
+	const chessBoardMaterial1 = new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' });
+	const chessBoardMaterial2 = new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' });
+
+	const mesh1 = new MeshComponent(vertices1, chessBoardMaterial1);
+	const mesh2 = new MeshComponent(vertices2, chessBoardMaterial2);
+
+	const cube1 = new SpaceEntity({
 		transform: {
 			scale: vec3.fromValues(1, 1, 1),
 			position: vec3.fromValues(20, 10, -40)
-		}
+		},
+		components: [mesh1]
 	});
 
-	const cube = new Object3D({
-		mesh: new Mesh(cubeVertices),
-		material: new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' }),
-		// rotation: rot,
+	const cube2 = new SpaceEntity({
 		transform: {
 			scale: vec3.fromValues(1, 2, 1),
 			position: vec3.fromValues(0, 0, -40)
-		}
+		},
+		components: [mesh2]
 	});
 
+	scene.mainCamera = cameraComponent;
+	scene.addSpaceEntity(cube1);
+	scene.addSpaceEntity(cube2);
 
-	await renderer.render(cameraComponent, [cube, cube1]);
+	await renderer.render(scene);
 
 	const speed = 0.2;
 	const angleSpeed = 0.01;
 
 	const frame = async () => {		
-		await renderer.render(cameraComponent, [cube, cube1]);
+		await renderer.render(scene);
 
-		cube.rotate(quat.fromEuler(0.01, 0, 0 , "xyz"));
+		cube2.rotate(quat.fromEuler(0.01, 0, 0 , "xyz"));
 
 		// cube.scaleBy(vec3.fromValues(1.0003, 1.0003, 1.0003))
 		// cube.translate(vec3.fromValues(0, 0, -0.1));

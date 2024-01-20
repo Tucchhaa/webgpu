@@ -1,14 +1,9 @@
-import { Object3D } from "../entity";
-import { loadShader } from "../helpers/load";
-import { EventPipeline } from "../core/middleware";
 import { WebGPURendererVertexManager as RendererVertexManager } from "./vertex-manager";
 import { BindGroupsManager } from "./bindgroups-manager";
 import { CAMERA_BINDGROUP_INDEX, DEPTH_TEXTURE_FORMAT, OBJECT_BINDGROUP_INDEX as OBJECT_BINDGROUP_INDEX } from "./const";
-import { CameraComponent } from "../entity/components/camera-component";
-
-class RendererEvents {
-    public prepareRenderPass: EventPipeline<{ pass: GPURenderPassEncoder, gameObjects: Object3D[] }> = new EventPipeline();
-}
+import { loadShader } from "../../helpers/load";
+import { CameraComponent, MeshComponent } from "../components";
+import { Scene } from "../scene/scene";
 
 export class Renderer {
     // === Base properties
@@ -17,8 +12,6 @@ export class Renderer {
 	private ctx: GPUCanvasContext;
 
     private canvas: HTMLCanvasElement;
-
-    private events: RendererEvents;
 
     // === Pipeline properties
 
@@ -39,7 +32,6 @@ export class Renderer {
         this.device = device;
         this.ctx = ctx;
         this.canvas = ctx.canvas as HTMLCanvasElement;
-        this.events = new RendererEvents();
         
         this.textureFormat = textureFormat;
         this.depthTextureFormat = DEPTH_TEXTURE_FORMAT;
@@ -76,22 +68,7 @@ export class Renderer {
     }
 
     private async init(): Promise<void> {
-        this.initEventsMiddleware();
-
         await this.createRenderPipeline();
-    }
-
-    private initEventsMiddleware() {
-        // this.events.prepareRenderPass
-        //     .use(async({ pass }, next) => {
-        //         pass.setPipeline(this.renderPipeline);
-        //         pass.setBindGroup(0, this.cameraBindGroup);
-
-        //         await next();
-
-        //         pass.end();
-        //     })
-        //     .use(this.vertexManager.handlePrepareRenderPassEvent.bind(this.vertexManager));
     }
 
     private async createRenderPipeline(): Promise<void> {
@@ -139,8 +116,10 @@ export class Renderer {
 
     // ===
 
-    async render(camera: CameraComponent, objects3d: Object3D[]): Promise<void> {
-        const cameraBindGroup = this.bindGroupsManager.getCameraBindGroup(camera, this.renderPipeline);
+    async render(scene: Scene): Promise<void> {
+        const { mainCamera: camera, meshes } = scene;
+
+        const cameraBindGroup = this.bindGroupsManager.getSceneBindGroup(camera, this.renderPipeline);
 
         const encoder = this.device.createCommandEncoder();
 
@@ -164,14 +143,12 @@ export class Renderer {
 
         let totalInstanceCount = 0;
 
-        for(const object3d of objects3d) {
-            const { mesh } = object3d;
-
-            const objectBindGroup = this.bindGroupsManager.getObjectBindGroup(object3d, this.renderPipeline);
+        for(const mesh of meshes) {
+            const objectBindGroup = this.bindGroupsManager.getMeshBindGroup(mesh, this.renderPipeline);
 
             renderPass.setBindGroup(OBJECT_BINDGROUP_INDEX, objectBindGroup);
 
-            renderPass.setVertexBuffer(0, this.vertexManager.getVertexBuffer(object3d));
+            renderPass.setVertexBuffer(0, this.vertexManager.getVertexBuffer(mesh));
 
             renderPass.draw(mesh.polygonsCount, 1, 0, totalInstanceCount);
 
