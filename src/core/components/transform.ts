@@ -1,4 +1,4 @@
-import { Vec3, Quat, Mat4, vec3, quat, mat4 } from "wgpu-matrix";
+import { Vec3, Quat, Mat4, vec3, quat, mat4, vec4 } from "wgpu-matrix";
 import { EntityComponent } from "./entity-component";
 
 export interface TransformConfig {
@@ -75,7 +75,7 @@ export class Transform extends EntityComponent {
 
         (vector as Float32Array)[2] = -(vector as Float32Array)[2]!;
 
-        const rotatedVector = vec3.transformQuat(vector, quat.inverse(rotation));
+        const rotatedVector = vec3.transformQuat(vector, quat.conjugate(rotation));
 
         this.position = vec3.add(this.position, rotatedVector);
     }

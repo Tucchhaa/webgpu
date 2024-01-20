@@ -9,7 +9,7 @@ import { Scene } from "./core/scene/scene";
 /*
 TODO:
 1. lights
-2. camera person-like movement
+2. OBJ format
 */
 
 // xyz, uv, normal
@@ -147,11 +147,14 @@ async function main() {
 		// cube2.translate(vec3.fromValues(0, 0, 0.1), cube1.transform);
 
 		if(Input.isShiftPressed) {
-			const rotation = quat.fromEuler(Input.axisVertical * angleSpeed, Input.axisHorizontal * angleSpeed, 0, 'xyz');
+			const horRotation = quat.fromEuler(0, Input.axisHorizontal * angleSpeed, 0, 'xyz');
+			const verRotation = quat.fromEuler(Input.axisVertical * angleSpeed, 0, 0, 'xyz');
 
-			camera.rotate(rotation);
+			camera.rotate(horRotation);
+			camera.rotate(verRotation, WorldTransform);
+
 		} else {
-			camera.translate(vec3.mulScalar(Input.axisVec3, speed));	
+			camera.translate(vec3.mulScalar(Input.axisVec3, speed));
 		}
 
 		requestAnimationFrame(frame);
