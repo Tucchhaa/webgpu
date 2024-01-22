@@ -25,7 +25,7 @@ export class SpaceEntity {
 
     public transform: Transform;
 
-    constructor(config: SpaceEntityConfig) {
+    constructor(config: SpaceEntityConfig = {}) {
         this.ID = SpaceEntity.generateInstanceID();
         this.components = {};
 

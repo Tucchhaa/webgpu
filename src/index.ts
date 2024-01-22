@@ -1,10 +1,11 @@
-import { CameraComponent, MeshComponent, WorldTransform } from "./core/components";
+import { CameraComponent, EntityComponent, MeshComponent, WorldTransform } from "./core/components";
 import { Input } from "./core/input/input";
 import { quat, vec3 } from "wgpu-matrix";
 import { Material } from "./core/material";
 import { Renderer } from "./core/renderer";
 import { SpaceEntity } from "./core/space-entity";
 import { Scene } from "./core/scene/scene";
+import { DirectLightComponent, PointLightComponent } from "./core/components/lights/light";
 
 /*
 TODO:
@@ -94,7 +95,28 @@ async function main() {
 	});
 
 	camera.addComponent(cameraComponent);
+
+	const directLight1 = new SpaceEntity({
+		transform: {
+			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI)
+		},
+		components: [new DirectLightComponent({ intensity: 0.5 })]
+	});
 	
+	const pointLight1 = new SpaceEntity({
+		transform: {
+			position: vec3.create(5, 0, -40)
+		},
+		components: [new PointLightComponent({ intensity: 2, range: 10 })]
+	});
+
+	const pointLight2 = new SpaceEntity({
+		transform: {
+			position: vec3.create(16, 6.5, -40)
+		},
+		components: [new PointLightComponent({ intensity: 2, range: 10 })]
+	});
+
 	const res = await fetch('src/resources/chess-texture.jpeg');
 	const img = await res.blob();
 	const bitmap = await createImageBitmap(img);
@@ -132,6 +154,9 @@ async function main() {
 	scene.mainCamera = cameraComponent;
 	scene.addSpaceEntity(cube1);
 	scene.addSpaceEntity(cube2);
+	scene.addSpaceEntity(directLight1);
+	scene.addSpaceEntity(pointLight1);
+	scene.addSpaceEntity(pointLight2);
 
 	await renderer.render(scene);
 

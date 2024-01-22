@@ -136,14 +136,13 @@ export class Renderer {
 
         renderPass.setPipeline(this.renderPipeline);
 
-        const { mainCamera: camera, meshes } = scene;
-        const sceneBindGroup = this.bindGroupsManager.getSceneBindGroup(camera, this.renderPipeline);
+        const sceneBindGroup = this.bindGroupsManager.getSceneBindGroup(scene, this.renderPipeline);
 
         renderPass.setBindGroup(SCENE_BINDGROUP_INDEX, sceneBindGroup);
 
         let totalInstanceCount = 0;
 
-        for(const mesh of meshes) {
+        for(const mesh of scene.meshes) {
             const objectBindGroup = this.bindGroupsManager.getMeshBindGroup(mesh, this.renderPipeline);
 
             renderPass.setBindGroup(OBJECT_BINDGROUP_INDEX, objectBindGroup);

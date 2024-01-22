@@ -1,3 +1,4 @@
+import { Transform } from ".";
 import { EntityComponentType, SpaceEntity } from "../space-entity";
 
 export abstract class EntityComponent {
@@ -17,6 +18,10 @@ export abstract class EntityComponent {
 
     public get entity(): SpaceEntity {
         return this._entity!;
+    }
+
+    public get transform(): Transform {
+        return this.entity.transform;
     }
 
     constructor() {

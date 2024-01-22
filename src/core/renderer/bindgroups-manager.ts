@@ -1,20 +1,28 @@
-import { mat3 } from "wgpu-matrix";
+import { mat3, mat4 } from "wgpu-matrix";
 import { CAMERA_BINDGROUP_INDEX, OBJECT_BINDGROUP_INDEX, MATRIX_4x4_BYTELENGTH, MATRIX_3x4_BYTELENGTH } from "./const";
 import { CameraComponent, MeshComponent } from "../components";
 import { Material } from "../material";
+import { Scene } from "../scene/scene";
+
+const DIRECT_LIGHT_SIZE = 12 * 4 + 1 * 4; // rotation + intensity
+const POINT_LIGHT_SIZE = 3 * 4 + 1 * 4 + 1 * 4; // pos + intensity + range
 
 interface SceneBindGroupInfo {
-    camera: CameraComponent;
+    scene: Scene;
 
     bindGroup: GPUBindGroup;
 
     viewProjectionMatrixBuffer: GPUBuffer;
+
+    directLightsBuffer: GPUBuffer;
+
+    pointLightsBuffer: GPUBuffer;
 }
 
 interface MeshBindGroupInfo {
-    mesh: MeshComponent;
-
     bindGroup: GPUBindGroup;
+
+    mesh: MeshComponent;
 
     transformationMatrixBuffer: GPUBuffer;
 
@@ -26,7 +34,7 @@ interface MeshBindGroupInfo {
 }
 
 export class BindGroupsManager {
-    private readonly cameraBindGroups: { [id: number]: SceneBindGroupInfo };
+    private readonly sceneBindGroups: { [id: number]: SceneBindGroupInfo };
     
     private readonly objectBindGroups: { [id: number]: MeshBindGroupInfo };
 
@@ -39,24 +47,24 @@ export class BindGroupsManager {
     // ===
     
     constructor(device: GPUDevice) {
-        this.cameraBindGroups = {};
+        this.sceneBindGroups = {};
         this.objectBindGroups = {};
 
         this.device = device;
         this.textureFormat = navigator.gpu.getPreferredCanvasFormat();
     }
 
-    public getSceneBindGroup(camera: CameraComponent, pipeline: GPUPipelineBase): GPUBindGroup {
-        let cameraBindGroup = this.cameraBindGroups[camera.ID];
+    public getSceneBindGroup(scene: Scene, pipeline: GPUPipelineBase): GPUBindGroup {
+        let sceneBindGroup = this.sceneBindGroups[scene.ID];
 
-        if(cameraBindGroup === undefined) {
-            cameraBindGroup = this.createSceneBindGroup(camera, pipeline);
-            this.cameraBindGroups[camera.ID] = cameraBindGroup;
+        if(sceneBindGroup === undefined) {
+            sceneBindGroup = this.createSceneBindGroup(scene, pipeline);
+            this.sceneBindGroups[scene.ID] = sceneBindGroup;
         }
 
-        this.updateSceneBuffer(cameraBindGroup);
+        this.updateSceneBuffer(sceneBindGroup);
 
-        return cameraBindGroup.bindGroup;
+        return sceneBindGroup.bindGroup;
     }
 
     public getMeshBindGroup(mesh: MeshComponent, pipeline: GPUPipelineBase): GPUBindGroup {
@@ -75,19 +83,26 @@ export class BindGroupsManager {
     // ===
     // Camera
     // ===
-    private createSceneBindGroup(camera: CameraComponent, pipeline: GPUPipelineBase): SceneBindGroupInfo {
+    private createSceneBindGroup(scene: Scene, pipeline: GPUPipelineBase): SceneBindGroupInfo {
         const viewProjectionMatrixBuffer = this.device.createBuffer({
             label: "Camera view-projection buffer",
             size: MATRIX_4x4_BYTELENGTH, 
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
-        const directionalLightBuffer = this.device.createBuffer({
+        const directLightsBuffer = this.device.createBuffer({
             label: 'Directional light buffer',
-            size: 3 * 4,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            size: 10 * DIRECT_LIGHT_SIZE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
-        this.device.queue.writeBuffer(directionalLightBuffer, 0, new Float32Array([1, -1, -1]));
+
+        const pointLightsBuffer = this.device.createBuffer({
+            label: 'Point light buffer',
+            size: 10 * POINT_LIGHT_SIZE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+
+        this.device.queue.writeBuffer(directLightsBuffer, 0, new Float32Array([1, -1, -1]));
 
         const bindGroup = this.device.createBindGroup({
             label: "Camera view-projection bind group",
@@ -102,20 +117,57 @@ export class BindGroupsManager {
                 {
                     binding: 1,
                     resource: {
-                        buffer: directionalLightBuffer
+                        buffer: directLightsBuffer
+                    }
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: pointLightsBuffer
                     }
                 }
             ]
         });
 
-        return { camera, bindGroup, viewProjectionMatrixBuffer };
+        return { 
+            bindGroup, 
+            scene, 
+            viewProjectionMatrixBuffer,
+            directLightsBuffer,
+            pointLightsBuffer
+        };
     }
 
     private updateSceneBuffer(bindGroupInfo: SceneBindGroupInfo) {
-        let data = bindGroupInfo.camera.getViewProjectionMatrix();
+        const { scene } = bindGroupInfo;
+
+        const viewProjectionMatrix = scene.mainCamera.getViewProjectionMatrix();
+
+        const { directLights, pointLights } = scene;
+
+        const directLightsData = new Float32Array(directLights.length * DIRECT_LIGHT_SIZE);
+        const pointLightsData = new Float32Array(pointLights.length * POINT_LIGHT_SIZE);
+
+        directLights.forEach((light, index) => {
+            directLightsData.set([light.intensity], DIRECT_LIGHT_SIZE/4 * index);
+            directLightsData.set(mat3.fromQuat(light.transform.rotation), DIRECT_LIGHT_SIZE/4 * index + 4);
+        });
+
+        pointLights.forEach((light, index) => {
+            pointLightsData.set(light.transform.position, (POINT_LIGHT_SIZE/4 + 3) * index);
+            pointLightsData.set([light.intensity, light.range], (POINT_LIGHT_SIZE/4 + 3) * index + 3);
+        });
 
         this.device.queue.writeBuffer(
-            bindGroupInfo.viewProjectionMatrixBuffer, 0, data as Float32Array
+            bindGroupInfo.viewProjectionMatrixBuffer, 0, viewProjectionMatrix as Float32Array
+        );
+
+        this.device.queue.writeBuffer(
+            bindGroupInfo.directLightsBuffer, 0, directLightsData
+        );
+
+        this.device.queue.writeBuffer(
+            bindGroupInfo.pointLightsBuffer, 0, pointLightsData
         );
     }
 
@@ -173,7 +225,7 @@ export class BindGroupsManager {
             ]
         });
 
-        return { mesh: mesh, bindGroup, transformationMatrixBuffer, rotationMatrixBuffer, sampler, texture };
+        return { mesh, bindGroup, transformationMatrixBuffer, rotationMatrixBuffer, sampler, texture };
     }
 
     private createTexture(material: Material): GPUTexture {        
