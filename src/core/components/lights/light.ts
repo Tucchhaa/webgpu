@@ -1,16 +1,22 @@
+import { Vec3, vec3 } from "wgpu-matrix";
 import { EntityComponent } from "..";
 
 interface LightConfig {
     intensity?: number;
+
+    color?: Vec3;
 }
 
 abstract class LightComponent extends EntityComponent {
     public intensity: number;
 
-    constructor(config: DirectLightConfig = {}) {
+    public color: Vec3;
+
+    constructor(config: LightConfig = {}) {
         super();
 
         this.intensity = config.intensity ?? 1;
+        this.color = config.color ?? vec3.create(255, 255, 255);
     }
 }
 

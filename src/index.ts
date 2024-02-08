@@ -86,12 +86,13 @@ async function main() {
 
 	const camera = new SpaceEntity({
 		transform: {
-			position: vec3.fromValues(0, 0, 0),
+			position: vec3.fromValues(40, 0, 0),
 		}
 	});
 
 	const cameraComponent = new CameraComponent({
 		screenHeight, screenWidth,
+		far: 400
 	});
 
 	camera.addComponent(cameraComponent);
@@ -107,14 +108,14 @@ async function main() {
 		transform: {
 			position: vec3.create(5, 0, -40)
 		},
-		components: [new PointLightComponent({ intensity: 2, range: 10 })]
+		components: [new PointLightComponent({ intensity: 2, range: 80, color: vec3.create(0, 255, 0) })]
 	});
 
 	const pointLight2 = new SpaceEntity({
 		transform: {
-			position: vec3.create(16, 6.5, -40)
+			position: vec3.create(16, 6.5, -36.5)
 		},
-		components: [new PointLightComponent({ intensity: 2, range: 10 })]
+		components: [new PointLightComponent({ intensity: 2, range: 80, color: vec3.create(255, 0, 0) })]
 	});
 
 	const res = await fetch('src/resources/chess-texture.jpeg');
@@ -144,9 +145,9 @@ async function main() {
 
 	const cube2 = new SpaceEntity({
 		transform: {
-			scale: vec3.fromValues(1, 2, 1),
+			scale: vec3.fromValues(1, 100, 100),
 			position: vec3.fromValues(0, 0, -40),
-			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI * 45/180)
+			// rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI * 45/180)
 		},
 		components: [mesh2]
 	});
@@ -166,7 +167,7 @@ async function main() {
 	const frame = async () => {		
 		await renderer.render(scene);
 
-		cube2.rotate(quat.fromEuler(0.01, 0, 0 , "xyz"), WorldTransform);
+		cube2.rotate(quat.fromEuler(0.001, 0, 0 , "xyz"), WorldTransform);
 
 		// cube.scaleBy(vec3.fromValues(1.0003, 1.0003, 1.0003))
 		// cube2.translate(vec3.fromValues(0, 0, 0.1), cube1.transform);

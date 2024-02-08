@@ -1,11 +1,11 @@
 import { mat3, mat4 } from "wgpu-matrix";
-import { CAMERA_BINDGROUP_INDEX, OBJECT_BINDGROUP_INDEX, MATRIX_4x4_BYTELENGTH, MATRIX_3x4_BYTELENGTH } from "./const";
+import { CAMERA_BINDGROUP_INDEX, OBJECT_BINDGROUP_INDEX, MATRIX_4x4_BYTELENGTH, MATRIX_3x4_BYTELENGTH, VECTOR_4_BYTELENGTH } from "./const";
 import { CameraComponent, MeshComponent } from "../components";
 import { Material } from "../material";
 import { Scene } from "../scene/scene";
 
 const DIRECT_LIGHT_SIZE = 12 * 4 + 1 * 4; // rotation + intensity
-const POINT_LIGHT_SIZE = 3 * 4 + 1 * 4 + 1 * 4; // pos + intensity + range
+const POINT_LIGHT_SIZE = 3 * 4 + 1 * 4 + 3 * 4 + 1 * 4; // pos + intensity + color + range
 
 interface SceneBindGroupInfo {
     scene: Scene;
@@ -24,9 +24,7 @@ interface MeshBindGroupInfo {
 
     mesh: MeshComponent;
 
-    transformationMatrixBuffer: GPUBuffer;
-
-    rotationMatrixBuffer: GPUBuffer;
+    transformationBuffer: GPUBuffer;
 
     texture: GPUTexture;
 
@@ -85,8 +83,8 @@ export class BindGroupsManager {
     // ===
     private createSceneBindGroup(scene: Scene, pipeline: GPUPipelineBase): SceneBindGroupInfo {
         const viewProjectionMatrixBuffer = this.device.createBuffer({
-            label: "Camera view-projection buffer",
-            size: MATRIX_4x4_BYTELENGTH, 
+            label: "Camera uniform buffer",
+            size: MATRIX_4x4_BYTELENGTH + VECTOR_4_BYTELENGTH, 
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
@@ -154,12 +152,19 @@ export class BindGroupsManager {
         });
 
         pointLights.forEach((light, index) => {
-            pointLightsData.set(light.transform.position, (POINT_LIGHT_SIZE/4 + 3) * index);
-            pointLightsData.set([light.intensity, light.range], (POINT_LIGHT_SIZE/4 + 3) * index + 3);
+            pointLightsData.set(light.transform.position, (POINT_LIGHT_SIZE/4) * index);
+            pointLightsData.set([light.intensity], (POINT_LIGHT_SIZE/4) * index + 3);
+
+            pointLightsData.set(light.color, (POINT_LIGHT_SIZE/4) * index + 4);
+            pointLightsData.set([light.range], (POINT_LIGHT_SIZE/4) * index + 7);
         });
 
         this.device.queue.writeBuffer(
             bindGroupInfo.viewProjectionMatrixBuffer, 0, viewProjectionMatrix as Float32Array
+        );
+
+        this.device.queue.writeBuffer(
+            bindGroupInfo.viewProjectionMatrixBuffer, MATRIX_4x4_BYTELENGTH, scene.mainCamera.transform.position as Float32Array
         );
 
         this.device.queue.writeBuffer(
@@ -179,15 +184,9 @@ export class BindGroupsManager {
     private createMeshBindGroup(mesh: MeshComponent, pipeline: GPUPipelineBase): MeshBindGroupInfo {
         const { material } = mesh;
 
-        const transformationMatrixBuffer = this.device.createBuffer({
-            label: "object transformation buffer",
-            size: MATRIX_4x4_BYTELENGTH, 
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
-
-        const rotationMatrixBuffer = this.device.createBuffer({
-            label: "rotation transformation buffer",
-            size: MATRIX_3x4_BYTELENGTH, 
+        const transformationBuffer = this.device.createBuffer({
+            label: "mesh transformation buffer",
+            size: MATRIX_4x4_BYTELENGTH + MATRIX_3x4_BYTELENGTH, 
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
@@ -205,7 +204,7 @@ export class BindGroupsManager {
                 {
                     binding: 0,
                     resource: {
-                        buffer: transformationMatrixBuffer
+                        buffer: transformationBuffer
                     }
                 },
                 {
@@ -216,16 +215,10 @@ export class BindGroupsManager {
                     binding: 2,
                     resource: texture.createView()
                 },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: rotationMatrixBuffer
-                    }
-                }
             ]
         });
 
-        return { mesh, bindGroup, transformationMatrixBuffer, rotationMatrixBuffer, sampler, texture };
+        return { mesh, bindGroup, transformationBuffer: transformationBuffer, sampler, texture };
     }
 
     private createTexture(material: Material): GPUTexture {        
@@ -250,16 +243,15 @@ export class BindGroupsManager {
     updateMeshBuffer(bindGroupInfo: MeshBindGroupInfo) {
         const { transform } = bindGroupInfo.mesh.entity;
 
-        const data = transform.transformationMatrix;
-        
-        const rotation = mat3.fromQuat(transform.rotation);
+        const { transformationMatrix } = transform;
+        const rotationMatrix = mat3.fromQuat(transform.rotation);
 
         this.device.queue.writeBuffer(
-            bindGroupInfo.transformationMatrixBuffer, 0, data as Float32Array
+            bindGroupInfo.transformationBuffer, 0, transformationMatrix as Float32Array
         );
 
         this.device.queue.writeBuffer(
-            bindGroupInfo.rotationMatrixBuffer, 0, rotation as Float32Array
+            bindGroupInfo.transformationBuffer, MATRIX_4x4_BYTELENGTH, rotationMatrix as Float32Array
         );
     }
 }
