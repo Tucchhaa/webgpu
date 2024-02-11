@@ -31,14 +31,19 @@ export class DirectLightComponent extends LightComponent {
 // pos + range 
 interface PointLightConfig extends LightConfig {
     range?: number;
+
+    angle?: number;
 }
 
 export class PointLightComponent extends LightComponent {
     public range: number;
 
+    public angle: number;
+
     constructor(config: PointLightConfig = {}) {
         super(config);
 
         this.range = config.range ?? 100;
+        this.angle = config.angle ?? Math.PI;
     }
 }

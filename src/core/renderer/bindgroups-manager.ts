@@ -1,11 +1,11 @@
-import { mat3, mat4 } from "wgpu-matrix";
+import { mat3, mat4, quat, vec3 } from "wgpu-matrix";
 import { CAMERA_BINDGROUP_INDEX, OBJECT_BINDGROUP_INDEX, MATRIX_4x4_BYTELENGTH, MATRIX_3x4_BYTELENGTH, VECTOR_4_BYTELENGTH } from "./const";
-import { CameraComponent, MeshComponent } from "../components";
+import { MeshComponent } from "../components";
 import { Material } from "../material";
 import { Scene } from "../scene/scene";
 
-const DIRECT_LIGHT_SIZE = 12 * 4 + 1 * 4; // rotation + intensity
-const POINT_LIGHT_SIZE = 3 * 4 + 1 * 4 + 3 * 4 + 1 * 4; // pos + intensity + color + range
+const DIRECT_LIGHT_SIZE = 4 * (3 + 1 + 12); // color + rotation
+const POINT_LIGHT_SIZE = 4 * (3 + 1 + 3 + 1 + 3 + 1); // pos + intensity + color + range + direction + angle
 
 interface SceneBindGroupInfo {
     scene: Scene;
@@ -147,7 +147,9 @@ export class BindGroupsManager {
         const pointLightsData = new Float32Array(pointLights.length * POINT_LIGHT_SIZE);
 
         directLights.forEach((light, index) => {
-            directLightsData.set([light.intensity], DIRECT_LIGHT_SIZE/4 * index);
+            directLightsData.set(light.color, DIRECT_LIGHT_SIZE/4 * index)
+            directLightsData.set([light.intensity], DIRECT_LIGHT_SIZE/4 * index + 3);
+            
             directLightsData.set(mat3.fromQuat(light.transform.rotation), DIRECT_LIGHT_SIZE/4 * index + 4);
         });
 
@@ -157,6 +159,11 @@ export class BindGroupsManager {
 
             pointLightsData.set(light.color, (POINT_LIGHT_SIZE/4) * index + 4);
             pointLightsData.set([light.range], (POINT_LIGHT_SIZE/4) * index + 7);
+
+            const direction = vec3.transformQuat(vec3.normalize(vec3.create(0, 0, -1)), light.transform.rotation);
+
+            pointLightsData.set(direction, (POINT_LIGHT_SIZE/4) * index + 8);
+            pointLightsData.set([light.angle], (POINT_LIGHT_SIZE/4) * index + 11);
         });
 
         this.device.queue.writeBuffer(

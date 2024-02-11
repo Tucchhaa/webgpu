@@ -1,9 +1,8 @@
 import { WebGPURendererVertexManager as RendererVertexManager } from "./vertex-manager";
 import { BindGroupsManager } from "./bindgroups-manager";
 import { CAMERA_BINDGROUP_INDEX as SCENE_BINDGROUP_INDEX, DEPTH_TEXTURE_FORMAT, OBJECT_BINDGROUP_INDEX as OBJECT_BINDGROUP_INDEX } from "./const";
-import { loadShader } from "../../helpers/load";
-import { CameraComponent, MeshComponent } from "../components";
 import { Scene } from "../scene/scene";
+import { ResourceLoader } from "../loader";
 
 export class Renderer {
     // === Base properties
@@ -74,7 +73,7 @@ export class Renderer {
     private async createRenderPipeline(): Promise<void> {
         const shaderModule = this.device.createShaderModule({
             label: "Base vertex/fragment shader",
-            code: await loadShader('base')
+            code: await ResourceLoader.loadShader('base')
         });
 
         const pipelineDescriptor: GPURenderPipelineDescriptor = {
@@ -121,7 +120,7 @@ export class Renderer {
 
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [{
-                clearValue: [1, 1, 1, 1],
+                clearValue: [37/255, 0/255, 69/255, 1],
                 view: this.ctx.getCurrentTexture().createView(),
                 loadOp: "clear",
                 storeOp: "store",

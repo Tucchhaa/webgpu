@@ -6,11 +6,15 @@ import { Renderer } from "./core/renderer";
 import { SpaceEntity } from "./core/space-entity";
 import { Scene } from "./core/scene/scene";
 import { DirectLightComponent, PointLightComponent } from "./core/components/lights/light";
+import { ResourceLoader } from "./core/loader";
 
 /*
 TODO:
 1. lights
 2. OBJ format
+3. Shadows
+4. Anti-aliasing
+5. ResourceLoader
 */
 
 // xyz, uv, normal
@@ -86,91 +90,75 @@ async function main() {
 
 	const camera = new SpaceEntity({
 		transform: {
-			position: vec3.fromValues(40, 0, 0),
-		}
+			position: vec3.fromValues(40, 20, 0),
+		},
+		components: [
+			new CameraComponent({
+				screenHeight, screenWidth,
+				far: 800
+			})
+		]
 	});
-
-	const cameraComponent = new CameraComponent({
-		screenHeight, screenWidth,
-		far: 400
-	});
-
-	camera.addComponent(cameraComponent);
 
 	const directLight1 = new SpaceEntity({
 		transform: {
-			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI)
+			rotation: quat.fromEuler(Math.PI / 180 * 30, Math.PI, 0, 'yxz')
 		},
-		components: [new DirectLightComponent({ intensity: 0.5 })]
+		components: [new DirectLightComponent({ color: vec3.create(255, 255, 255), intensity: 0.7 })]
 	});
 	
 	const pointLight1 = new SpaceEntity({
 		transform: {
-			position: vec3.create(5, 0, -40)
+			position: vec3.create(5, 10, -40),
 		},
-		components: [new PointLightComponent({ intensity: 2, range: 80, color: vec3.create(0, 255, 0) })]
+		components: [new PointLightComponent({ intensity: 1.2, range: 150, color: vec3.create(0, 0, 255), angle: Math.PI / 180 * 15 })]
 	});
 
 	const pointLight2 = new SpaceEntity({
 		transform: {
-			position: vec3.create(16, 6.5, -36.5)
+			position: vec3.create(65, 10, -40),
+			// position: vec3.create(16, 6.5, -36.5),
 		},
-		components: [new PointLightComponent({ intensity: 2, range: 80, color: vec3.create(255, 0, 0) })]
+		components: [new PointLightComponent({ intensity: 1.2, range: 300, color: vec3.create(255, 0, 0), angle: Math.PI / 180 * 160 })]
 	});
 
 	const res = await fetch('src/resources/chess-texture.jpeg');
 	const img = await res.blob();
 	const bitmap = await createImageBitmap(img);
 
-	const vertices1 = new Float32Array(cubeVertices.length);
-	const vertices2 = new Float32Array(cubeVertices.length);
+	const vertices = new Float32Array(cubeVertices);
+	const chessBoardMaterial = new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' });
+	const floorMesh = new MeshComponent(vertices, chessBoardMaterial);
 
-	vertices1.set(cubeVertices);
-	vertices2.set(cubeVertices);
-
-	const chessBoardMaterial1 = new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' });
-	const chessBoardMaterial2 = new Material({ textureBitmap: bitmap, samplerMagFilter: 'linear', samplerMinFilter: 'linear' });
-
-	const mesh1 = new MeshComponent(vertices1, chessBoardMaterial1);
-	const mesh2 = new MeshComponent(vertices2, chessBoardMaterial2);
-
-	const cube1 = new SpaceEntity({
+	const floor = new SpaceEntity({
 		transform: {
-			scale: vec3.fromValues(1, 1, 1),
-			position: vec3.fromValues(20, 10, -40),
-			rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI)
+			scale: vec3.fromValues(200, 1, 200),
+			position: vec3.fromValues(0, -10, -40),
 		},
-		components: [mesh1]
+		components: [floorMesh]
 	});
 
-	const cube2 = new SpaceEntity({
+	const jet = new SpaceEntity({
 		transform: {
-			scale: vec3.fromValues(1, 100, 100),
-			position: vec3.fromValues(0, 0, -40),
-			// rotation: quat.fromAxisAngle(vec3.create(0, 1, 0), Math.PI * 45/180)
+			position: vec3.fromValues(40, 0, -100)
 		},
-		components: [mesh2]
-	});
+		components: [await ResourceLoader.loadMesh('jet/jet')]
+	})
 
-	scene.mainCamera = cameraComponent;
-	scene.addSpaceEntity(cube1);
-	scene.addSpaceEntity(cube2);
+	scene.mainCamera = camera.requireComponent(CameraComponent);
+	scene.addSpaceEntity(floor);
+	scene.addSpaceEntity(jet);
 	scene.addSpaceEntity(directLight1);
 	scene.addSpaceEntity(pointLight1);
 	scene.addSpaceEntity(pointLight2);
 
 	await renderer.render(scene);
 
-	const speed = 0.2;
-	const angleSpeed = 0.01;
+	const speed = 0.6;
+	const angleSpeed = 0.02;
 
 	const frame = async () => {		
 		await renderer.render(scene);
-
-		cube2.rotate(quat.fromEuler(0.001, 0, 0 , "xyz"), WorldTransform);
-
-		// cube.scaleBy(vec3.fromValues(1.0003, 1.0003, 1.0003))
-		// cube2.translate(vec3.fromValues(0, 0, 0.1), cube1.transform);
 
 		if(Input.isShiftPressed) {
 			const horRotation = quat.fromEuler(0, Input.axisHorizontal * angleSpeed, 0, 'xyz');
@@ -178,9 +166,10 @@ async function main() {
 
 			camera.rotate(horRotation);
 			camera.rotate(verRotation, WorldTransform);
-
 		} else {
 			camera.translate(vec3.mulScalar(Input.axisVec3, speed));
+
+			// pointLight1.position = camera.position;
 		}
 
 		requestAnimationFrame(frame);
@@ -195,7 +184,7 @@ async function main() {
 		canvas.width = screenWidth;
 
 		renderer.onScreenResized();
-		cameraComponent.setScreenSizes(screenWidth, screenHeight);
+		camera.getComponent(CameraComponent)!.setScreenSizes(screenWidth, screenHeight);
 	});
 
 	resizeObserver.observe(canvas);
