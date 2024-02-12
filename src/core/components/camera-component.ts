@@ -25,7 +25,7 @@ export class CameraComponent extends EntityComponent {
         super();
 
         this.far = config.far ?? 100.0;
-        this.near = config.near ?? 1.0;
+        this.near = config.near ?? 0.1;
         this.fov = config.fov ?? Math.PI * 2 / 5;
 
         this.setScreenSizes(config.screenWidth, config.screenHeight);

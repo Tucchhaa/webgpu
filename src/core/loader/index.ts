@@ -7,7 +7,7 @@ const SHADERS_LOCATION = 'src/core/renderer/shaders';
 const MESH_LOCATION = `src/resources/meshes`;
 
 export class ResourceLoader {
-    static async loadMesh(meshName: string): Promise<MeshComponent> {
+    static async loadMesh(meshName: string, texture: string): Promise<MeshComponent> {
         const response = await fetch(`${MESH_LOCATION}/${meshName}.obj`);
 
         const raw = await response.text();
@@ -47,7 +47,7 @@ export class ResourceLoader {
             }
         }
 
-        const res = await fetch('src/resources/meshes/jet/jet.png');
+        const res = await fetch(texture);
         const img = await res.blob();
         const bitmap = await createImageBitmap(img);
 

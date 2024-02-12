@@ -59,7 +59,8 @@ fn vertexMain(input: VertexInput) -> VertexOutput {
 }
 
 @fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+fn fragmentMain(@builtin(sample_index) ind: u32, input: VertexOutput) -> @location(0) vec4f {
+
   var directLightsLength = arrayLength(&directLights);
   var pointLightsLength = arrayLength(&pointLights);
 
@@ -107,4 +108,5 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   }
 
   return vec4f(c_result, 1);
+  // return vec4f(pow(c_result.x / 255, 1/2.2) * 255, pow(c_result.y / 255, 1/2.2) * 255, pow(c_result.z / 255, 1/2.2) * 255, 1);
 }

@@ -1,4 +1,12 @@
-import { CameraComponent, EntityComponent, MeshComponent, WorldTransform } from "./core/components";
+// const canvas = document.getElementById('canvas') as HTMLCanvasElement;
+
+// window.addEventListener('load', main);
+
+// async function main() {
+	
+// }
+
+import { CameraComponent, MeshComponent, WorldTransform } from "./core/components";
 import { Input } from "./core/input/input";
 import { quat, vec3 } from "wgpu-matrix";
 import { Material } from "./core/material";
@@ -10,11 +18,11 @@ import { ResourceLoader } from "./core/loader";
 
 /*
 TODO:
-1. lights
+1. spot light
 2. OBJ format
 3. Shadows
 4. Anti-aliasing
-5. ResourceLoader
+5. ResourceLoader - Material
 */
 
 // xyz, uv, normal
@@ -142,8 +150,8 @@ async function main() {
 		transform: {
 			position: vec3.fromValues(40, 0, -100)
 		},
-		components: [await ResourceLoader.loadMesh('jet/jet')]
-	})
+		components: [await ResourceLoader.loadMesh('jet/jet', 'src/resources/meshes/jet/jet.png')]
+	});
 
 	scene.mainCamera = camera.requireComponent(CameraComponent);
 	scene.addSpaceEntity(floor);
