@@ -1,4 +1,8 @@
+import { mat4, quat, vec3 } from "wgpu-matrix";
+import { CameraComponent, WorldTransform } from "./core/components";
 import { ResourceLoader } from "./core/loader";
+import { SpaceEntity } from "./core/space-entity";
+import { Input } from "./core/input/input";
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 
@@ -9,27 +13,63 @@ const SEGMENT_SIZE = 6;
 const SEGMENTS_PER_CURVE = 100;
 const RESULT_BYTELENGTH_PER_CURVE = SEGMENTS_PER_CURVE * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
+const HORIZONTAL_GRID_SIZE = { x: 20, z: 20 }; // X, Z
+const HORIZONTAL_GRID_CELL_WIDTH = 7.5;
+const HORIZONTAL_GRID_BYTELENGTH = (HORIZONTAL_GRID_SIZE.x + HORIZONTAL_GRID_SIZE.z + 2) * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
+
+const cameraComponent = new CameraComponent({
+    screenHeight: 800, screenWidth: 800,
+    far: 800
+});
+
+const camera = new SpaceEntity({
+    transform: {
+        position: vec3.fromValues(0, 5, 0),
+    },
+    components: [cameraComponent]
+})
+
 async function main() {
     const { device, ctx, textureFormat } = await init();
 
     const computePipeline = await createComputePipeline();
     const renderPipeline = await createRenderPipeline();
 
-    let curves = new Float32Array([
-        -.75, .75, 0, // pivot1
-        -.75, 1, 0, // derivative1
-        0, .5, 0, // derivative 2
-        0, .75, 0, // pivot2
+    const horizontalGrid = createHorizontalGrid();
 
-        0, .75, 0, // pivot3
-        0, 1, 0, // derivative 3
-        .5, .7, 0, // derivative4
-        .5, .5, 0, // pivot4
+    let curves = new Float32Array([
+        -7.5, 7.5, -20, // pivot1
+        -7.5, 10, -20, // derivative1
+        0, 5, -20, // derivative 2
+        0, 7.5, -20, // pivot2
+
+        0, 7.5, -20, // pivot3
+        0, 10, -20, // derivative 3
+        5, 7, -30, // derivative4
+        5, 5, -30, // pivot4
     ]);
 
-    const segments = await computeSegments(curves);
+	const speed = 0.1;
+	const angleSpeed = 0.02;
 
-    renderSegments(segments);
+	const frame = async () => {		
+        const segments = await computeSegments(curves);
+
+        renderSegments(segments);
+
+		if(Input.isShiftPressed) {
+			const horRotation = quat.fromEuler(0, Input.axisHorizontal * angleSpeed, 0, 'xyz');
+			const verRotation = quat.fromEuler(Input.axisVertical * angleSpeed, 0, 0, 'xyz');
+
+			camera.rotate(horRotation);
+			camera.rotate(verRotation, WorldTransform);
+		} else {
+			camera.translate(vec3.mulScalar(Input.axisVec3, speed));
+		}
+
+		requestAnimationFrame(frame);
+	}
+	frame();
 
     async function createRenderPipeline() {
         const vertexLayout: GPUVertexBufferLayout = {
@@ -93,6 +133,34 @@ async function main() {
         return computePipeline;
     }
 
+    function createHorizontalGrid(): Float32Array {
+        const grid = [];
+
+        const { x: x_size, z: z_size } = HORIZONTAL_GRID_SIZE;
+        const xGridWidth = x_size * HORIZONTAL_GRID_CELL_WIDTH;
+        const zGridWidth = z_size * HORIZONTAL_GRID_CELL_WIDTH;
+        const cellWidth = HORIZONTAL_GRID_CELL_WIDTH;
+
+        const xFrom = -Math.floor(x_size / 2);
+        const xTo = x_size / 2;
+
+        const zFrom = -Math.floor(z_size / 2);
+        const zTo = z_size / 2;
+
+        for(let i = xFrom; i <= xTo; i++) {
+            grid.push(i * cellWidth, 0,  zGridWidth / 2);
+            grid.push(i * cellWidth, 0, -zGridWidth / 2);
+
+        }
+
+        for(let i = zFrom; i <= zTo; i++) {
+            grid.push( xGridWidth / 2 , 0, i * cellWidth);
+            grid.push(-xGridWidth / 2,  0, i * cellWidth);
+        }
+
+        return new Float32Array(grid);
+    }
+
     async function computeSegments(curves: Float32Array) {
         const curvesNumber = curves.length / CURVE_SIZE;
         const resultBytelength = curvesNumber * RESULT_BYTELENGTH_PER_CURVE;
@@ -148,13 +216,42 @@ async function main() {
     }
 
     function renderSegments(segments: Float32Array) {
-        const vertexNumber = segments.length / 3;
+        const segmentsBuffer = device.createBuffer({
+            label: 'segments buffer',
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            size: segments.byteLength
+        });
+        device.queue.writeBuffer(segmentsBuffer, 0, segments);
+
+        const gridBuffer = device.createBuffer({
+            label: 'grid buffer',
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            size: HORIZONTAL_GRID_BYTELENGTH
+        });
+        device.queue.writeBuffer(gridBuffer, 0, horizontalGrid);
+
+        const viewProjectionMatrixBuffer = device.createBuffer({
+            label: "Camera uniform buffer",
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            size: 4 * 4 * 4
+        });
+
+        device.queue.writeBuffer(viewProjectionMatrixBuffer, 0, cameraComponent.getViewProjectionMatrix() as Float32Array);
+
+        const bindGroup = device.createBindGroup({
+            layout: renderPipeline.getBindGroupLayout(0),
+            entries: [{
+                binding: 0, resource: { buffer: viewProjectionMatrixBuffer }
+            }]
+        });
+
+        // ===
 
         const encoder = device.createCommandEncoder();
 
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [{
-                clearValue: [37/255, 0/255, 69/255, 1],
+                clearValue: [200/255, 200/255, 200/255, 1],
                 view: ctx.getCurrentTexture().createView(),
                 loadOp: "clear",
                 storeOp: "store",
@@ -162,18 +259,13 @@ async function main() {
         });
 
         renderPass.setPipeline(renderPipeline);
+        renderPass.setBindGroup(0, bindGroup);
 
-        const vertexBuffer = device.createBuffer({
-            label: 'vertex buffer',
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-            size: segments.byteLength
-        });
-
-        device.queue.writeBuffer(vertexBuffer, 0, segments);
-
-        renderPass.setVertexBuffer(0, vertexBuffer);
-
-        renderPass.draw(vertexNumber);
+        renderPass.setVertexBuffer(0, gridBuffer);
+        renderPass.draw(horizontalGrid.length / 3);
+        
+        renderPass.setVertexBuffer(0, segmentsBuffer);
+        renderPass.draw(segments.length / 3);
 
         renderPass.end();
 
@@ -194,11 +286,8 @@ async function getWebGPUAdapter(): Promise<GPUAdapter> {
 }
 
 async function init(): Promise<{ device: GPUDevice, ctx: GPUCanvasContext, textureFormat: GPUTextureFormat }> {
-    const screenHeight = canvas.offsetHeight * 2;
-    const screenWidth = canvas.offsetWidth * 2;
-
-    canvas.height = screenHeight;
-    canvas.width = screenWidth;
+    updateDimensions();
+    new ResizeObserver(updateDimensions).observe(canvas);
 
     const adapter = await getWebGPUAdapter();
     const device = await adapter.requestDevice();
@@ -212,5 +301,17 @@ async function init(): Promise<{ device: GPUDevice, ctx: GPUCanvasContext, textu
         alphaMode: 'premultiplied'
     });
 
+    Input.init();
+
     return { device, ctx, textureFormat };
+}
+
+function updateDimensions() {
+    const screenHeight = canvas.offsetHeight * 2;
+    const screenWidth = canvas.offsetWidth * 2;
+
+    canvas.height = screenHeight;
+    canvas.width = screenWidth;
+
+    cameraComponent.setScreenSizes(screenWidth, screenHeight);
 }

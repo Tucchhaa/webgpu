@@ -24,9 +24,10 @@ fn computeMain(@builtin(global_invocation_id) global_id : vec3u) {
     );
 
     // 4 points define the curve
-    let curveMatrix = mat2x4(
+    let curveMatrix = mat3x4(
         curves[curveIndex + 0], curves[curveIndex + 3], curves[curveIndex + 6], curves[curveIndex + 9],
-        curves[curveIndex + 1], curves[curveIndex + 4], curves[curveIndex + 7], curves[curveIndex + 10]
+        curves[curveIndex + 1], curves[curveIndex + 4], curves[curveIndex + 7], curves[curveIndex + 10],
+        curves[curveIndex + 2], curves[curveIndex + 5], curves[curveIndex + 8], curves[curveIndex + 11],
     );
 
     let bezierMatrix = basisMatrix * curveMatrix;
@@ -40,17 +41,17 @@ fn computeMain(@builtin(global_invocation_id) global_id : vec3u) {
 
         let tVector = vec4f(1, t, pow(t, 2), pow(t, 3));
 
-        let position = tVector * bezierMatrix;
+        let position: vec3f = tVector * bezierMatrix;
 
         let segmentIndex = (i - 1) * SEGMENT_SIZE;
         let index = resultCurveIndex + segmentIndex;
 
         result[index + 0] = prevPosition.x;
         result[index + 1] = prevPosition.y;
-        result[index + 2] = 0;
+        result[index + 2] = prevPosition.z;
         result[index + 3] = position.x;
         result[index + 4] = position.y;
-        result[index + 5] = 0;
+        result[index + 5] = position.z;
 
         prevPosition = position;
     }
