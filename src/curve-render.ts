@@ -1,4 +1,4 @@
-import { mat4, quat, vec3 } from "wgpu-matrix";
+import { mat3, mat4, quat, vec3, vec4 } from "wgpu-matrix";
 import { CameraComponent, WorldTransform } from "./core/components";
 import { ResourceLoader } from "./core/loader";
 import { SpaceEntity } from "./core/space-entity";
@@ -9,12 +9,13 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 window.addEventListener('load', main);
 
 const CURVE_SIZE = 12;
-const SEGMENT_SIZE = 6;
+const SEGMENT_SIZE = 24;
 const SEGMENTS_PER_CURVE = 100;
 const RESULT_BYTELENGTH_PER_CURVE = SEGMENTS_PER_CURVE * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
 const HORIZONTAL_GRID_SIZE = { x: 20, z: 20 }; // X, Z
 const HORIZONTAL_GRID_CELL_WIDTH = 7.5;
+const HORIZONTAL_GRID_THICKNESS = 0.1;
 const HORIZONTAL_GRID_BYTELENGTH = (HORIZONTAL_GRID_SIZE.x + HORIZONTAL_GRID_SIZE.z + 2) * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
 const cameraComponent = new CameraComponent({
@@ -38,18 +39,26 @@ async function main() {
     const horizontalGrid = createHorizontalGrid();
 
     let curves = new Float32Array([
-        -7.5, 7.5, -20, // pivot1
-        -7.5, 10, -20, // derivative1
-        0, 5, -20, // derivative 2
+        -7.5, 7.5, -20, 0, // pivot1 + pad
+        -7.5, 10, -20, 0,// derivative1 + pad
+        0, 5, -20, 0,// derivative 2 + pad
         0, 7.5, -20, // pivot2
+        0.15, // thickness
 
-        0, 7.5, -20, // pivot3
-        0, 10, -20, // derivative 3
-        5, 7, -30, // derivative4
+        0, 7.5, -20, 0, // pivot3 + pad
+        0, 10, -20, 0, // derivative 3 + pad
+        5, 7, -30, 0, // derivative4 + pad
         5, 5, -30, // pivot4
+        0.15, // thickness
+
+        5, 5, -30, 0, // pivot3 + pad
+        5, 3, -30, 0, // derivative 3 + pad
+        -7.5, -7.5, -20, 0, // derivative4 + pad
+        -7.5, 7.5, -20, // pivot4
+        0.15 // thickness
     ]);
 
-	const speed = 0.1;
+	const speed = 0.3;
 	const angleSpeed = 0.02;
 
 	const frame = async () => {		
@@ -73,13 +82,13 @@ async function main() {
 
     async function createRenderPipeline() {
         const vertexLayout: GPUVertexBufferLayout = {
-            arrayStride: 3 * 4, // xyz
+            arrayStride: 4 * 4, // xyz
             attributes: [
                 {
-                    format: "float32x3",
+                    format: "float32x4",
                     offset: 0,
                     shaderLocation: 0,
-                },
+                }
             ],
         }
 
@@ -104,7 +113,7 @@ async function main() {
                 }]
             },
             primitive: {
-                topology: 'line-list',
+                topology: 'triangle-list',
             },
         };
 
@@ -139,7 +148,9 @@ async function main() {
         const { x: x_size, z: z_size } = HORIZONTAL_GRID_SIZE;
         const xGridWidth = x_size * HORIZONTAL_GRID_CELL_WIDTH;
         const zGridWidth = z_size * HORIZONTAL_GRID_CELL_WIDTH;
+
         const cellWidth = HORIZONTAL_GRID_CELL_WIDTH;
+        const displace = HORIZONTAL_GRID_THICKNESS / 2;
 
         const xFrom = -Math.floor(x_size / 2);
         const xTo = x_size / 2;
@@ -148,14 +159,21 @@ async function main() {
         const zTo = z_size / 2;
 
         for(let i = xFrom; i <= xTo; i++) {
-            grid.push(i * cellWidth, 0,  zGridWidth / 2);
-            grid.push(i * cellWidth, 0, -zGridWidth / 2);
+            const p1 = vec4.create(i * cellWidth + displace, 0,  zGridWidth / 2);
+            const p2 = vec4.create(i * cellWidth - displace, 0,  zGridWidth / 2);
+            const p3 = vec4.create(i * cellWidth + displace, 0, -zGridWidth / 2);
+            const p4 = vec4.create(i * cellWidth - displace, 0, -zGridWidth / 2);
 
+            grid.push(...p1, ...p3, ...p2, ...p4, ...p2, ...p3);
         }
 
         for(let i = zFrom; i <= zTo; i++) {
-            grid.push( xGridWidth / 2 , 0, i * cellWidth);
-            grid.push(-xGridWidth / 2,  0, i * cellWidth);
+            const p1 = vec4.create( zGridWidth / 2, 0, i * cellWidth + displace);
+            const p2 = vec4.create( zGridWidth / 2, 0, i * cellWidth - displace);
+            const p3 = vec4.create(-zGridWidth / 2, 0, i * cellWidth + displace);
+            const p4 = vec4.create(-zGridWidth / 2, 0, i * cellWidth - displace);
+
+            grid.push(...p1, ...p3, ...p2, ...p4, ...p2, ...p3);
         }
 
         return new Float32Array(grid);
@@ -165,11 +183,19 @@ async function main() {
         const curvesNumber = curves.length / CURVE_SIZE;
         const resultBytelength = curvesNumber * RESULT_BYTELENGTH_PER_CURVE;
 
+        const cameraPositionBuffer = device.createBuffer({
+            label: "Camera uniform buffer",
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            size: 3 * 4
+        });
+        device.queue.writeBuffer(cameraPositionBuffer, 0, camera.position as Float32Array);
+
         const curvesBuffer = device.createBuffer({
             label: 'dots buffer',
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
             size: curves.byteLength
         });
+        device.queue.writeBuffer(curvesBuffer, 0, curves);
     
         const resultBuffer = device.createBuffer({
             label: 'result buffer',
@@ -186,12 +212,11 @@ async function main() {
         const bindGroup = device.createBindGroup({
             layout: computePipeline.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: curvesBuffer } },
-                { binding: 1, resource: { buffer: resultBuffer } }
+                { binding: 0, resource: { buffer: cameraPositionBuffer } },
+                { binding: 1, resource: { buffer: curvesBuffer } },
+                { binding: 2, resource: { buffer: resultBuffer } },
             ]
         });
-    
-        device.queue.writeBuffer(curvesBuffer, 0, curves);
     
         const encoder = device.createCommandEncoder();
     
@@ -226,7 +251,7 @@ async function main() {
         const gridBuffer = device.createBuffer({
             label: 'grid buffer',
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-            size: HORIZONTAL_GRID_BYTELENGTH
+            size: horizontalGrid.byteLength
         });
         device.queue.writeBuffer(gridBuffer, 0, horizontalGrid);
 
@@ -262,10 +287,10 @@ async function main() {
         renderPass.setBindGroup(0, bindGroup);
 
         renderPass.setVertexBuffer(0, gridBuffer);
-        renderPass.draw(horizontalGrid.length / 3);
+        renderPass.draw(horizontalGrid.length / 4);
         
         renderPass.setVertexBuffer(0, segmentsBuffer);
-        renderPass.draw(segments.length / 3);
+        renderPass.draw(segments.length / 4);
 
         renderPass.end();
 
