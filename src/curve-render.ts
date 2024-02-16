@@ -8,15 +8,14 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 
 window.addEventListener('load', main);
 
-const CURVE_SIZE = 12;
-const SEGMENT_SIZE = 24;
+const CURVE_SIZE = 16; // amount of number to define a curve + padding
+const SEGMENT_SIZE = 6; // number of vertexes to represent a segment
+const VERTEX_SIZE = 4; // xyz + pad
 const SEGMENTS_PER_CURVE = 100;
-const RESULT_BYTELENGTH_PER_CURVE = SEGMENTS_PER_CURVE * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
 const HORIZONTAL_GRID_SIZE = { x: 20, z: 20 }; // X, Z
 const HORIZONTAL_GRID_CELL_WIDTH = 7.5;
 const HORIZONTAL_GRID_THICKNESS = 0.1;
-const HORIZONTAL_GRID_BYTELENGTH = (HORIZONTAL_GRID_SIZE.x + HORIZONTAL_GRID_SIZE.z + 2) * SEGMENT_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
 const cameraComponent = new CameraComponent({
     screenHeight: 800, screenWidth: 800,
@@ -52,19 +51,22 @@ async function main() {
         0.15, // thickness
 
         5, 5, -30, 0, // pivot3 + pad
-        5, 3, -30, 0, // derivative 3 + pad
-        -7.5, -7.5, -20, 0, // derivative4 + pad
-        -7.5, 7.5, -20, // pivot4
+        5, 3, -30.15, 0, // derivative 3 + pad
+        -7.5, 1, -30, 0, // derivative4 + pad
+        -7.5, 7.5, -30, // pivot4
         0.15 // thickness
     ]);
 
 	const speed = 0.3;
 	const angleSpeed = 0.02;
 
-	const frame = async () => {		
-        const segments = await computeSegments(curves);
+	const frame = async () => {
+        const vertexCount = curves.length / CURVE_SIZE * SEGMENTS_PER_CURVE * SEGMENT_SIZE;
+        const vertexBufferBytelength = vertexCount * VERTEX_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
-        renderSegments(segments);
+        const vertexBuffer = await computeSegments(curves, vertexBufferBytelength);
+
+        renderSegments(vertexBuffer, vertexCount);
 
 		if(Input.isShiftPressed) {
 			const horRotation = quat.fromEuler(0, Input.axisHorizontal * angleSpeed, 0, 'xyz');
@@ -179,9 +181,8 @@ async function main() {
         return new Float32Array(grid);
     }
 
-    async function computeSegments(curves: Float32Array) {
+    async function computeSegments(curves: Float32Array, resultBytelength: number): Promise<GPUBuffer> {
         const curvesNumber = curves.length / CURVE_SIZE;
-        const resultBytelength = curvesNumber * RESULT_BYTELENGTH_PER_CURVE;
 
         const cameraPositionBuffer = device.createBuffer({
             label: "Camera uniform buffer",
@@ -192,20 +193,14 @@ async function main() {
 
         const curvesBuffer = device.createBuffer({
             label: 'dots buffer',
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             size: curves.byteLength
         });
         device.queue.writeBuffer(curvesBuffer, 0, curves);
     
         const resultBuffer = device.createBuffer({
             label: 'result buffer',
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-            size: resultBytelength
-        });
-    
-        const outputBuffer = device.createBuffer({
-            label: 'output buffer',
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
             size: resultBytelength
         });
     
@@ -228,26 +223,15 @@ async function main() {
         pass.dispatchWorkgroups(curvesNumber, 1, 1);
     
         pass.end();
-    
-        encoder.copyBufferToBuffer(resultBuffer, 0, outputBuffer, 0, resultBytelength);
-    
+        
         device.queue.submit([encoder.finish()]);
-    
-        await outputBuffer.mapAsync(GPUMapMode.READ);
 
-        const segments = new Float32Array(outputBuffer.getMappedRange());
+        await device.queue.onSubmittedWorkDone();
 
-        return segments;
+        return resultBuffer;
     }
 
-    function renderSegments(segments: Float32Array) {
-        const segmentsBuffer = device.createBuffer({
-            label: 'segments buffer',
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-            size: segments.byteLength
-        });
-        device.queue.writeBuffer(segmentsBuffer, 0, segments);
-
+    function renderSegments(vertexBuffer: GPUBuffer, vertexCount: number) {
         const gridBuffer = device.createBuffer({
             label: 'grid buffer',
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -289,8 +273,8 @@ async function main() {
         renderPass.setVertexBuffer(0, gridBuffer);
         renderPass.draw(horizontalGrid.length / 4);
         
-        renderPass.setVertexBuffer(0, segmentsBuffer);
-        renderPass.draw(segments.length / 4);
+        renderPass.setVertexBuffer(0, vertexBuffer);
+        renderPass.draw(vertexCount);
 
         renderPass.end();
 
