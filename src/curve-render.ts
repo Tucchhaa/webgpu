@@ -1,21 +1,39 @@
-import { mat3, mat4, quat, vec3, vec4 } from "wgpu-matrix";
+import { Vec3, mat3, mat4, quat, vec3, vec4 } from "wgpu-matrix";
 import { CameraComponent, WorldTransform } from "./core/components";
 import { ResourceLoader } from "./core/loader";
 import { SpaceEntity } from "./core/space-entity";
 import { Input } from "./core/input/input";
 
+type Curve = {
+    p1: Vec3, s1: Vec3, p2: Vec3, s2: Vec3
+};
+
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 
 window.addEventListener('load', main);
 
-const CURVE_SIZE = 16; // amount of number to define a curve + padding
+const CURVE_SIZE = 12; // amount of number to define a curve + padding
 const SEGMENT_SIZE = 6; // number of vertexes to represent a segment
+const PIVOT_SIZE = 12; // number of vertexes to represent a pivot
 const VERTEX_SIZE = 4; // xyz + pad
+
+const PIVOTS_PER_CURVE = 4;
 const SEGMENTS_PER_CURVE = 100;
 
 const HORIZONTAL_GRID_SIZE = { x: 20, z: 20 }; // X, Z
 const HORIZONTAL_GRID_CELL_WIDTH = 7.5;
 const HORIZONTAL_GRID_THICKNESS = 0.1;
+
+const renderOptions = {
+    grid: {
+        x: 20,
+        z: 20,
+
+        cellWidth: 7.5,
+        thickness: 0.1
+    },
+    curveThickness: 0.1
+};
 
 const cameraComponent = new CameraComponent({
     screenHeight: 800, screenWidth: 800,
@@ -37,36 +55,37 @@ async function main() {
 
     const horizontalGrid = createHorizontalGrid();
 
-    let curves = new Float32Array([
-        -7.5, 7.5, -20, 0, // pivot1 + pad
-        -7.5, 10, -20, 0,// derivative1 + pad
-        0, 5, -20, 0,// derivative 2 + pad
-        0, 7.5, -20, // pivot2
-        0.15, // thickness
-
-        0, 7.5, -20, 0, // pivot3 + pad
-        0, 10, -20, 0, // derivative 3 + pad
-        5, 7, -30, 0, // derivative4 + pad
-        5, 5, -30, // pivot4
-        0.15, // thickness
-
-        5, 5, -30, 0, // pivot3 + pad
-        5, 3, -30.15, 0, // derivative 3 + pad
-        -7.5, 1, -30, 0, // derivative4 + pad
-        -7.5, 7.5, -30, // pivot4
-        0.15 // thickness
-    ]);
+    let curves: Curve[] = [{
+        p1: vec3.create(-7.5, 7.5, -20),
+        s1: vec3.create(-7.5, 10, -20),
+        s2: vec3.create(0, 5, -20),
+        p2: vec3.create(0, 7.5, -20),
+    }, {
+        p1: vec3.create(5, 5, -30),
+        s1: vec3.create(5, 3, -30),
+        s2: vec3.create(-7.5, 1, -30),
+        p2: vec3.create(-7.5, 7.5, -30), 
+    }, {
+        p1: vec3.create(0, 7.5, -20),
+        s1: vec3.create(0, 10, -20),
+        s2: vec3.create(5, 7, -30),
+        p2: vec3.create(5, 5, -30),
+    }];
 
 	const speed = 0.3;
 	const angleSpeed = 0.02;
 
 	const frame = async () => {
-        const vertexCount = curves.length / CURVE_SIZE * SEGMENTS_PER_CURVE * SEGMENT_SIZE;
-        const vertexBufferBytelength = vertexCount * VERTEX_SIZE * Float32Array.BYTES_PER_ELEMENT;
+        const segmentsVertexCount = curves.length * SEGMENTS_PER_CURVE * SEGMENT_SIZE;
+        const pivotsVertexCount = curves.length * PIVOTS_PER_CURVE * PIVOT_SIZE;
 
-        const vertexBuffer = await computeSegments(curves, vertexBufferBytelength);
+        const segmentsBufferBytelength = segmentsVertexCount * VERTEX_SIZE * Float32Array.BYTES_PER_ELEMENT;
+        const pivotsBufferBytelength = pivotsVertexCount * VERTEX_SIZE * Float32Array.BYTES_PER_ELEMENT;
 
-        renderSegments(vertexBuffer, vertexCount);
+        const curvesTypedArray = getCurvesTypedArray(curves);
+        const { segmentsBuffer, pivotsBuffer } = await computeSegments(curvesTypedArray, segmentsBufferBytelength, pivotsBufferBytelength);
+
+        render(segmentsBuffer, segmentsVertexCount, pivotsBuffer, pivotsVertexCount);
 
 		if(Input.isShiftPressed) {
 			const horRotation = quat.fromEuler(0, Input.axisHorizontal * angleSpeed, 0, 'xyz');
@@ -181,8 +200,16 @@ async function main() {
         return new Float32Array(grid);
     }
 
-    async function computeSegments(curves: Float32Array, resultBytelength: number): Promise<GPUBuffer> {
+    async function computeSegments(curves: Float32Array, segmentsResultBytelength: number, pivotsBufferBytelength: number) {
         const curvesNumber = curves.length / CURVE_SIZE;
+
+        const optionsBuffer = device.createBuffer({
+            label: 'compute options uniform buffer',
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            size: 1 * Float32Array.BYTES_PER_ELEMENT
+        });
+        const options = new Float32Array([renderOptions.curveThickness]);
+        device.queue.writeBuffer(optionsBuffer, 0, options);
 
         const cameraPositionBuffer = device.createBuffer({
             label: "Camera uniform buffer",
@@ -198,18 +225,27 @@ async function main() {
         });
         device.queue.writeBuffer(curvesBuffer, 0, curves);
     
-        const resultBuffer = device.createBuffer({
-            label: 'result buffer',
+        const segmentsBuffer = device.createBuffer({
+            label: 'segments result buffer',
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
-            size: resultBytelength
+            size: segmentsResultBytelength
+        });
+
+        const pivotsBuffer = device.createBuffer({
+            label: 'pivots result buffer',
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
+            size: pivotsBufferBytelength
         });
     
         const bindGroup = device.createBindGroup({
             layout: computePipeline.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: cameraPositionBuffer } },
-                { binding: 1, resource: { buffer: curvesBuffer } },
-                { binding: 2, resource: { buffer: resultBuffer } },
+                { binding: 0, resource: { buffer: optionsBuffer } },
+                { binding: 1, resource: { buffer: cameraPositionBuffer } },
+                { binding: 2, resource: { buffer: curvesBuffer } },
+
+                { binding: 3, resource: { buffer: segmentsBuffer } },
+                { binding: 4, resource: { buffer: pivotsBuffer } },
             ]
         });
     
@@ -228,10 +264,10 @@ async function main() {
 
         await device.queue.onSubmittedWorkDone();
 
-        return resultBuffer;
+        return { segmentsBuffer, pivotsBuffer };
     }
 
-    function renderSegments(vertexBuffer: GPUBuffer, vertexCount: number) {
+    function render(segmentBuffer: GPUBuffer, segmentVertexCount: number, pivotsBuffer: GPUBuffer, pivotsVertexCount: number) {
         const gridBuffer = device.createBuffer({
             label: 'grid buffer',
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -271,14 +307,33 @@ async function main() {
         renderPass.setBindGroup(0, bindGroup);
 
         renderPass.setVertexBuffer(0, gridBuffer);
-        renderPass.draw(horizontalGrid.length / 4);
+        renderPass.draw(horizontalGrid.length / 4, undefined, undefined, 0);
         
-        renderPass.setVertexBuffer(0, vertexBuffer);
-        renderPass.draw(vertexCount);
+        renderPass.setVertexBuffer(0, segmentBuffer);
+        renderPass.draw(segmentVertexCount, undefined, undefined, 1);
+
+        renderPass.setVertexBuffer(0, pivotsBuffer);
+        renderPass.draw(pivotsVertexCount, undefined, undefined, 2);
 
         renderPass.end();
 
         device.queue.submit([encoder.finish()]);
+    }
+
+    function getCurvesTypedArray(curves: Curve[]) {
+        const array = [];
+
+        for(let i=0; i < curves.length; i++) {
+            const curve = curves[i]!;
+            array.push(
+                ...curve.p1,
+                ...curve.s1,
+                ...curve.s2,
+                ...curve.p2
+            );
+        }
+
+        return new Float32Array(array);
     }
 }
 
